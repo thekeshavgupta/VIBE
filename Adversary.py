@@ -4,19 +4,27 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 class Adversary(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim: int, hidden_layers: list[int], enable_debiasing = False):
         super().__init__()
-        self.layer1 = nn.Linear(input_dim, 128)
-        self.layer2 = nn.Linear(128, 64)
-        self.layer3 = nn.Linear(64, 1)
+        self.first_layer = nn.Linear(input_dim, hidden_layers[0])
+        self.hidden_objects = [self.first_layer]
+        for i in range(len(hidden_layers)-1):
+            self.hidden_objects.append(nn.Linear(hidden_layers[i], hidden_layers[i+1]))
+               
+        self.last_layer = nn.Linear(hidden_layers[-1], 1)
         self.relu_layer = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
+        self.enable_debiasing = enable_debiasing
         
     def getImportantFeatureRepresentations(self, x: torch.tensor):
-        return self.layer2(self.relu_layer(self.layer1(x)))
+        output = x
+        for layers in self.hidden_objects:
+            output = layers(output)
+            output = self.relu_layer(output)
+        return output
     
-    def remove_bias_using_projection(self, biased_input: torch.tensor, k: int = 1, enable_debiasing: bool = False):
-        if not enable_debiasing:
+    def remove_bias_using_projection(self, biased_input: torch.tensor, k: int = 1):
+        if not self.enable_debiasing:
             return biased_input
         pca = PCA()
         bias_detached = biased_input.detach().numpy()
@@ -29,6 +37,6 @@ class Adversary(nn.Module):
         
     def forward(self, x: torch.tensor):
         biased_outputs = self.getImportantFeatureRepresentations(x)
-        debiased_outputs = self.remove_bias_using_projection(biased_outputs, k=1, enable_debiasing=True)
-        return self.sigmoid(self.layer3(self.relu_layer(debiased_outputs)))
+        debiased_outputs = self.remove_bias_using_projection(biased_outputs, k=1)
+        return self.sigmoid(self.last_layer(debiased_outputs))
     
