@@ -10,8 +10,8 @@ class Adversary(nn.Module):
         self.hidden_objects = [self.first_layer]
         for i in range(len(hidden_layers)-1):
             self.hidden_objects.append(nn.Linear(hidden_layers[i], hidden_layers[i+1]))
-               
-        self.last_layer = nn.Linear(hidden_layers[-1], 1)
+        self.hidden_objects.append(nn.Linear(hidden_layers[-1], input_dim))
+        self.last_layer = nn.Linear(input_dim, 1)
         self.relu_layer = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.enable_debiasing = enable_debiasing
