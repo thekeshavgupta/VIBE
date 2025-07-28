@@ -6,12 +6,15 @@ from Encoder import Encoder
 
 class MainModel():
     def __init__(self, dataPath: str, hidden_layer_sizes: list[int], learning_rate: float = 0.001, epochs: int = 500, enable_debiasing = False):
+        
         self.encoder = Encoder(dataPath)
         self.learning_rate = learning_rate
         self.loss_fnc = nn.BCELoss()
         self.num_epochs = epochs
         self.hidden_layers = hidden_layer_sizes
         self.enable_debiasing = enable_debiasing
+        if(len(self.hidden_layers) == 0):
+            raise SyntaxError("hidden layers cannot be empty")
     
     def trainModel(self):
         # Generating the embeddings of the inputs
@@ -45,7 +48,7 @@ class MainModel():
     
     
 if __name__ == "__main__":
-    model_orchestrator = MainModel('biased_gender_data_synthetic.csv', hidden_layer_sizes=[128, 64], enable_debiasing=True)
+    model_orchestrator = MainModel('biased_gender_data_synthetic.csv', hidden_layer_sizes=[], enable_debiasing=True)
     model_orchestrator.run()
     debiased_input = model_orchestrator.fetch_debiased_embeddings()
     
