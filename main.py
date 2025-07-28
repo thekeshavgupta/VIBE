@@ -1,8 +1,5 @@
 import torch
 from torch import nn
-import pandas as pd
-import numpy as np
-from sentence_transformers import SentenceTransformer
 from sklearn.model_selection import train_test_split
 from Adversary import Adversary
 from Encoder import Encoder
@@ -32,7 +29,7 @@ class MainModel():
         with torch.no_grad():
             test_pred = self.advModel(input_test)
             test_loss = self.loss_fnc(torch.round(test_pred), output_test)
-            print(f"Test Loss: {test_loss}")           
+            print(f"*** Test Loss: {test_loss} ***")           
     
     def run(self):
         print("==== Started the execution ==== ")

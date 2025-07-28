@@ -11,4 +11,7 @@ class Encoder():
         input_data = torch.tensor(embeddingModel.encode(self.data['bio'].tolist()))
         output_data = torch.tensor(self.data['gender'].tolist(), dtype=torch.float32).reshape(-1,1)
         return [input_data, output_data]
+    
+    def encodeOnTheFly(self, input: torch.tensor, output: torch.tensor):
+        pass
         
