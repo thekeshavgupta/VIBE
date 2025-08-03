@@ -1,12 +1,14 @@
 import torch
 from torch import nn
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 from Adversary import Adversary
 from Encoder import Encoder
 
 class VIBE():
-    def __init__(self, dataPath: str, hidden_layer_sizes: list[int], learning_rate: float = 0.001, epochs: int = 500, enable_debiasing = False):
-        
+    def __init__(self,input_col: str, output_col: str, dataPath: str, hidden_layer_sizes: list[int], learning_rate: float = 0.001, epochs: int = 500, enable_debiasing = False):
+        self.input_col = input_col
+        self.output_col = output_col
         self.encoder = Encoder(dataPath)
         self.learning_rate = learning_rate
         self.loss_fnc = nn.BCELoss()
@@ -18,7 +20,7 @@ class VIBE():
     
     def trainModel(self):
         # Generating the embeddings of the inputs
-        [self.input_data, self.output_data] = self.encoder.encode()
+        [self.input_data, self.output_data] = self.encoder.encode(self.input_col, self.output_col)
         self.advModel = Adversary(self.input_data.shape[1], self.hidden_layers, self.enable_debiasing)
         self.optimiser = torch.optim.Adam(self.advModel.parameters(), lr=self.learning_rate)
         
@@ -37,9 +39,12 @@ class VIBE():
         self.advModel.eval()
         with torch.no_grad():
             test_pred = self.advModel(input_test)
-            test_loss = self.loss_fnc(torch.round(test_pred), output_test)
+            test_loss = self.loss_fnc(test_pred, output_test)
             print(f"*** Test Loss: {test_loss} ***")
-    
+            test_pred_labels = (test_pred > 0.5).float()
+            test_accuracy = accuracy_score(output_test.cpu(), test_pred_labels.cpu())
+            print(f"*** Test Accuracy: {test_accuracy} ***")
+            print("**** Model training completed ****")
     def fetch_debiased_embeddings(self):
         return self.advModel.getImportantFeatureRepresentations(self.input_data)
     

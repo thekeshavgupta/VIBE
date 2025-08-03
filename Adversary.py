@@ -1,42 +1,81 @@
+from typing import List
 import torch
-from torch import nn
+from torch import nn, Tensor
 import numpy as np
 from sklearn.decomposition import PCA
+from sklearn.exceptions import NotFittedError
 
 class Adversary(nn.Module):
-    def __init__(self, input_dim: int, hidden_layers: list[int], enable_debiasing = False):
+    def __init__(self, input_dim: int, hidden_layers: List[int], enable_debiasing: bool = False):
         super().__init__()
-        self.first_layer = nn.Linear(input_dim, hidden_layers[0])
-        self.hidden_objects = [self.first_layer]
-        for i in range(len(hidden_layers)-1):
-            self.hidden_objects.append(nn.Linear(hidden_layers[i], hidden_layers[i+1]))
-        self.hidden_objects.append(nn.Linear(hidden_layers[-1], input_dim))
-        self.last_layer = nn.Linear(input_dim, 1)
-        self.relu_layer = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
-        self.enable_debiasing = enable_debiasing
         
-    def getImportantFeatureRepresentations(self, x: torch.tensor):
-        output = x
-        for layers in self.hidden_objects:
-            output = layers(output)
-            output = self.relu_layer(output)
-        return output
+        if not hidden_layers:
+            raise ValueError("hidden_layers cannot be empty")
+        
+        # Build network layers
+        layers = []
+        layer_dims = [input_dim] + hidden_layers + [input_dim]
+        for i in range(len(layer_dims) - 1):
+            layers.extend([
+                nn.Linear(layer_dims[i], layer_dims[i + 1]),
+                nn.ReLU(),
+                nn.BatchNorm1d(layer_dims[i + 1])
+            ])
+        
+        self.feature_extractor = nn.Sequential(*layers)
+        self.classifier = nn.Sequential(
+            nn.Linear(input_dim, 1),
+            nn.Sigmoid()
+        )
+        
+        self.enable_debiasing = enable_debiasing
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.to(self.device)
+        
+        self.pca = PCA()
+        self._pca_fitted = False
     
-    def remove_bias_using_projection(self, biased_input: torch.tensor, k: int = 1):
+    def getImportantFeatureRepresentations(self, x: Tensor) -> Tensor:
+        return self.feature_extractor(x)
+    
+    def remove_bias_using_projection(self, biased_input: Tensor, k: int = 1) -> Tensor:
         if not self.enable_debiasing:
             return biased_input
-        pca = PCA()
-        bias_detached = biased_input.detach().numpy()
-        pca.fit(bias_detached)
-        biased_input_centered = bias_detached - bias_detached.mean()
-        top_k_components = pca.components_[:,k].reshape(-1,1)
-        pca_alignment_value = np.dot(biased_input_centered, top_k_components).reshape(-1,1)
-        reprojected_bias_input = np.dot(pca_alignment_value, top_k_components.T)
-        return torch.tensor(biased_input_centered - reprojected_bias_input)
-        
-    def forward(self, x: torch.tensor):
+            
+        try:
+            # Move to CPU for numpy operations
+            bias_detached = biased_input.cpu().detach().numpy()
+            
+            # Fit PCA if not already fitted
+            if not self._pca_fitted:
+                self.pca.fit(bias_detached)
+                self._pca_fitted = True
+                
+            # Center the input
+            bias_mean = bias_detached.mean(axis=0)
+            biased_input_centered = bias_detached - bias_mean
+            
+            # Get top k components and project
+            top_k_components = self.pca.components_[:k].T
+            pca_alignment = np.dot(biased_input_centered, top_k_components)
+            reprojected_bias = np.dot(pca_alignment, top_k_components.T)
+            
+            # Remove projected bias and convert back to tensor
+            debiased = torch.tensor(
+                biased_input_centered - reprojected_bias, 
+                dtype=torch.float32,
+                device=self.device
+            )
+            
+            return debiased
+            
+        except (ValueError, NotFittedError) as e:
+            print(f"Warning: Error in bias removal - {str(e)}")
+            return biased_input
+    
+    def forward(self, x: Tensor) -> Tensor:
+        x = x.to(self.device)
         biased_outputs = self.getImportantFeatureRepresentations(x)
-        debiased_outputs = self.remove_bias_using_projection(biased_outputs, k=1)
-        return self.sigmoid(self.last_layer(debiased_outputs))
+        debiased_outputs = self.remove_bias_using_projection(biased_outputs)
+        return self.classifier(debiased_outputs)
     
